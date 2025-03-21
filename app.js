@@ -123,7 +123,7 @@ function setupEventListeners() {
     document.getElementById('flyingModeBtn').addEventListener('click', () => setMode(1));
     document.getElementById('walkingModeBtn').addEventListener('click', () => setMode(2));
     
-    // Set POI checkboxes
+    // Set POI checkboxes and disable buttons
     for (let i = 1; i <= 3; i++) {
         // Enabled checkbox toggles marker visibility
         document.getElementById(`poi${i}Enabled`).addEventListener('change', function(e) {
@@ -138,6 +138,9 @@ function setupEventListeners() {
             
             // Update status indicator
             updatePOIStatusIndicator(i);
+            
+            // Update disable button state
+            updateDisableButtonState(i);
         });
         
         // Set New Location checkbox
@@ -171,6 +174,12 @@ function setupEventListeners() {
         // Update marker when inputs change
         document.getElementById(`poi${i}Lat`).addEventListener('change', () => updateMarkerFromInputs(i));
         document.getElementById(`poi${i}Lon`).addEventListener('change', () => updateMarkerFromInputs(i));
+        
+        // Add event listener for disable button
+        document.getElementById(`poi${i}DisableBtn`).addEventListener('click', () => disablePOI(i));
+        
+        // Initialize disable button state
+        updateDisableButtonState(i);
     }
 }
 
@@ -361,6 +370,9 @@ function handleIncomingBLEData(event) {
                     // Update the POI status indicator
                     updatePOIStatusIndicator(i);
                     
+                    // Update disable button state
+                    updateDisableButtonState(i);
+                    
                     // Update marker
                     if (enabled) {
                         poiMarkers[i-1].setLatLng([lat, lon]);
@@ -522,6 +534,45 @@ function updateModeButtons(mode) {
     } else if (mode === 2) { // Walking mode
         document.getElementById('flyingModeBtn').classList.remove('active');
         document.getElementById('walkingModeBtn').classList.add('active');
+    }
+}
+
+// Function to disable a POI
+async function disablePOI(poiNum) {
+    if (!rxCharacteristic) {
+        alert('Please connect to the device first');
+        return;
+    }
+    
+    const lat = parseFloat(document.getElementById(`poi${poiNum}Lat`).value);
+    const lon = parseFloat(document.getElementById(`poi${poiNum}Lon`).value);
+    // Set enabled to 0 (disabled)
+    const enabled = 0;
+    
+    const command = `POI:${poiNum}:${lat}:${lon}:${enabled}`;
+    const result = await sendCommand(command);
+    
+    if (result) {
+        // Update UI to reflect disabled state
+        document.getElementById(`poi${poiNum}Enabled`).checked = false;
+        updatePOIStatusIndicator(poiNum);
+        hidePOIMarker(poiNum - 1);
+        updateDisableButtonState(poiNum);
+        alert(`POI ${poiNum} has been disabled.`);
+    } else {
+        alert('Failed to disable POI. Please try again.');
+    }
+}
+
+// Update the disable button state based on the POI enabled state
+function updateDisableButtonState(poiNum) {
+    const enabled = document.getElementById(`poi${poiNum}Enabled`).checked;
+    const disableBtn = document.getElementById(`poi${poiNum}DisableBtn`);
+    
+    if (enabled) {
+        disableBtn.disabled = false;
+    } else {
+        disableBtn.disabled = true;
     }
 }
 
