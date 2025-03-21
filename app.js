@@ -81,6 +81,16 @@ function initializeMap() {
             
             // After setting location, automatically uncheck the "Set" checkbox
             document.getElementById(`poi${i}SetNew`).checked = false;
+            
+            // New code: Automatically update the POI on the device
+            // Make sure the POI is enabled
+            document.getElementById(`poi${i}Enabled`).checked = true;
+            updatePOIStatusIndicator(i);
+            updateDisableButtonState(i);
+            
+            // Send the POI update to the device immediately
+            updateSinglePOI(i);
+            
             activeSetPOIIndex = -1;
         }
     });
@@ -141,10 +151,13 @@ function setupEventListeners() {
             
             // Update disable button state
             updateDisableButtonState(i);
+            
+            // Prevent default behavior that might cause unexpected unticking
+            e.stopPropagation();
         });
         
         // Set New Location checkbox
-        document.getElementById(`poi${i}SetNew`).addEventListener('change', function() {
+        document.getElementById(`poi${i}SetNew`).addEventListener('change', function(e) {
             const index = i - 1;
             
             if (this.checked) {
@@ -163,6 +176,9 @@ function setupEventListeners() {
                 
                 // Alert user about action
                 alert(`Click on the map to set location for POI ${i}`);
+                
+                // Prevent event propagation that might cause unticking
+                e.stopPropagation();
             } else {
                 // If this checkbox was unchecked, reset activeSetPOIIndex
                 if (activeSetPOIIndex === index) {
@@ -352,32 +368,35 @@ function handleIncomingBLEData(event) {
             }
         }
         
-        // Extract POI information
-        for (let i = 1; i <= 3; i++) {
-            const poiRegex = new RegExp(`POI${i}: Lat=([\\-\\d\\.]+), Lon=([\\-\\d\\.]+), En=(\\d)`);
-            const poiMatch = data.match(poiRegex);
-            if (poiMatch) {
-                const lat = parseFloat(poiMatch[1]);
-                const lon = parseFloat(poiMatch[2]);
-                const enabled = poiMatch[3] === '1';
-                
-                // Only update if this POI is not being actively set
-                if (activeSetPOIIndex !== i - 1) {
+        // Extract POI information - but only if we're not actively setting one
+        if (activeSetPOIIndex === -1) {
+            for (let i = 1; i <= 3; i++) {
+                const poiRegex = new RegExp(`POI${i}: Lat=([\\-\\d\\.]+), Lon=([\\-\\d\\.]+), En=(\\d)`);
+                const poiMatch = data.match(poiRegex);
+                if (poiMatch) {
+                    const lat = parseFloat(poiMatch[1]);
+                    const lon = parseFloat(poiMatch[2]);
+                    const enabled = poiMatch[3] === '1';
+                    
+                    // Get current state to avoid unnecessary updates
+                    const currentEnabled = document.getElementById(`poi${i}Enabled`).checked;
+                    
+                    // Update the fields
                     document.getElementById(`poi${i}Lat`).value = lat.toFixed(6);
                     document.getElementById(`poi${i}Lon`).value = lon.toFixed(6);
-                    document.getElementById(`poi${i}Enabled`).checked = enabled;
                     
-                    // Update the POI status indicator
-                    updatePOIStatusIndicator(i);
-                    
-                    // Update disable button state
-                    updateDisableButtonState(i);
+                    // Only update enabled state if it's different, to avoid unticking
+                    if (currentEnabled !== enabled) {
+                        document.getElementById(`poi${i}Enabled`).checked = enabled;
+                        updatePOIStatusIndicator(i);
+                        updateDisableButtonState(i);
+                    }
                     
                     // Update marker
                     if (enabled) {
                         poiMarkers[i-1].setLatLng([lat, lon]);
                         poiMarkers[i-1].addTo(mainMap);
-                    } else {
+                    } else if (!currentEnabled) { // Only remove if it was already disabled
                         if (mainMap.hasLayer(poiMarkers[i-1])) {
                             mainMap.removeLayer(poiMarkers[i-1]);
                         }
@@ -437,7 +456,35 @@ function handleIncomingBLEData(event) {
     }
 }
 
-// Update all POIs to the device
+// New function to update a single POI
+async function updateSinglePOI(poiNum) {
+    if (!rxCharacteristic) {
+        console.error('Not connected to BLE device');
+        return false;
+    }
+    
+    const lat = parseFloat(document.getElementById(`poi${poiNum}Lat`).value);
+    const lon = parseFloat(document.getElementById(`poi${poiNum}Lon`).value);
+    const enabled = document.getElementById(`poi${poiNum}Enabled`).checked ? 1 : 0;
+    
+    if ((isNaN(lat) || isNaN(lon)) && enabled) {
+        alert(`POI ${poiNum} has invalid coordinates but is enabled. Please correct.`);
+        return false;
+    }
+    
+    const command = `POI:${poiNum}:${lat}:${lon}:${enabled}`;
+    const result = await sendCommand(command);
+    
+    if (result) {
+        console.log(`POI ${poiNum} updated successfully`);
+        return true;
+    } else {
+        console.error(`Failed to update POI ${poiNum}`);
+        return false;
+    }
+}
+
+// Update all POIs to the device - modified to use the new updateSinglePOI function
 async function updateAllPOIs() {
     if (!rxCharacteristic) {
         alert('Please connect to the device first');
@@ -447,18 +494,7 @@ async function updateAllPOIs() {
     let success = true;
     
     for (let i = 1; i <= 3; i++) {
-        const lat = parseFloat(document.getElementById(`poi${i}Lat`).value);
-        const lon = parseFloat(document.getElementById(`poi${i}Lon`).value);
-        const enabled = document.getElementById(`poi${i}Enabled`).checked ? 1 : 0;
-        
-        if ((isNaN(lat) || isNaN(lon)) && enabled) {
-            alert(`POI ${i} has invalid coordinates but is enabled. Please correct.`);
-            return;
-        }
-        
-        const command = `POI:${i}:${lat}:${lon}:${enabled}`;
-        const result = await sendCommand(command);
-        
+        const result = await updateSinglePOI(i);
         if (!result) {
             success = false;
         }
