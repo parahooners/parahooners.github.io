@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ENAV POI Manager</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map {
+            height: 400px;
+            width: 100%;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .controls {
+            margin: 10px;
+        }
+        .controls label {
+            margin-right: 10px;
+        }
+        .controls input {
+            margin-right: 10px;
+        }
+        #connectionStatus {
+            width: 50px;
+            height: 50px;
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>ENAV POI Manager</h1>
+    <img id="connectionStatus" src="disconnected.png" alt="Connection Status">
+    <div id="map"></div>
+    <div class="controls">
+        <button id="connectButton">Connect to Board</button>
+        <label for="poiLat">Latitude:</label>
+        <input type="text" id="poiLat" placeholder="Enter Latitude">
+        <label for="poiLon">Longitude:</label>
+        <input type="text" id="poiLon" placeholder="Enter Longitude">
+        <label for="poiEnabled">Enable POI:</label>
+        <input type="checkbox" id="poiEnabled">
+        <button id="updatePOIButton">Update POI</button>
+    </div>
+    <div class="controls">
+        <h3>Saved Points</h3>
+        <label for="savedHomeLat">Home Latitude:</label>
+        <input type="text" id="savedHomeLat" readonly>
+        <label for="savedHomeLon">Home Longitude:</label>
+        <input type="text" id="savedHomeLon" readonly>
+        <label for="savedPoiLat">POI Latitude:</label>
+        <input type="text" id="savedPoiLat" readonly>
+        <label for="savedPoiLon">POI Longitude:</label>
+        <input type="text" id="savedPoiLon" readonly>
+        <label for="savedPoiEnabled">POI Enabled:</label>
+        <input type="checkbox" id="savedPoiEnabled" disabled>
+    </div>
+    <div class="controls">
+        <h3>Fuel Information</h3>
+        <label for="fuelLevel">Fuel Level (L):</label>
+        <input type="text" id="fuelLevel" readonly>
+        <label for="fuelBurnRate">Fuel Burn Rate (L/h):</label>
+        <input type="text" id="fuelBurnRate" readonly>
+    </div>
+    <div class="controls">
+        <h3>Update Fuel Information</h3>
+        <label for="newFuelLevel">Fuel Level (L):</label>
+        <input type="text" id="newFuelLevel" placeholder="Enter Fuel Level">
+        <label for="newBurnRate">Burn Rate (L/h):</label>
+        <input type="text" id="newBurnRate" placeholder="Enter Burn Rate">
+        <button id="updateFuelButton">Update Fuel</button>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="ble-poi.js"></script>
+    <script>
+        function populateFields(data) {
+            // Populate the fields with the current data
+            if (data.homeLat !== undefined) document.getElementById('savedHomeLat').value = data.homeLat;
+            if (data.homeLon !== undefined) document.getElementById('savedHomeLon').value = data.homeLon;
+            if (data.poiLat !== undefined) document.getElementById('savedPoiLat').value = data.poiLat;
+            if (data.poiLon !== undefined) document.getElementById('savedPoiLon').value = data.poiLon;
+            if (data.poiEnabled !== undefined) document.getElementById('savedPoiEnabled').checked = data.poiEnabled;
+            if (data.fuelLevel !== undefined) document.getElementById('fuelLevel').value = data.fuelLevel;
+            if (data.fuelBurnRate !== undefined) document.getElementById('fuelBurnRate').value = data.fuelBurnRate;
+        }
+
+        function validateFuelUpdate(data) {
+            const displayedFuelLevel = document.getElementById('fuelLevel').value;
+            const displayedBurnRate = document.getElementById('fuelBurnRate').value;
+
+            if (data.fuelLevel === displayedFuelLevel && data.fuelBurnRate === displayedBurnRate) {
+                alert('Fuel data successfully updated and validated!');
+            } else {
+                alert('Fuel data update failed. Please try again.');
+            }
+        }
+
+        function fetchDataFromBoard() {
+            // Simulate fetching data from the board
+            const mockData = {
+                homeLat: '51.5074',
+                homeLon: '-0.1278',
+                poiLat: '48.8566',
+                poiLon: '2.3522',
+                poiEnabled: true,
+                fuelLevel: '12.0',
+                fuelBurnRate: '4.5'
+            };
+            populateFields(mockData);
+        }
+
+        document.getElementById('connectButton').addEventListener('click', () => {
+            // Simulate connecting to the board
+            console.log('Connecting to board...');
+            fetchDataFromBoard();
+        });
+
+        // Automatically fetch data when the page loads
+        window.onload = fetchDataFromBoard;
+    </script>
+</body>
+</html>
