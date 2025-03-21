@@ -57,6 +57,7 @@ function initializeMap() {
             const position = marker.getLatLng();
             document.getElementById(`poi${i+1}Lat`).value = position.lat.toFixed(6);
             document.getElementById(`poi${i+1}Lon`).value = position.lng.toFixed(6);
+            updatePOIStatusIndicator(i+1);
         });
         
         // Add popup with POI info
@@ -77,7 +78,21 @@ function initializeMap() {
             if (!mainMap.hasLayer(poiMarkers[activeSetPOIIndex])) {
                 poiMarkers[activeSetPOIIndex].addTo(mainMap);
             }
+            
+            // After setting location, automatically uncheck the "Set" checkbox
+            document.getElementById(`poi${i}SetNew`).checked = false;
+            activeSetPOIIndex = -1;
         }
+    });
+    
+    // Add map resize handler to ensure it displays correctly
+    setTimeout(() => {
+        mainMap.invalidateSize();
+    }, 100);
+    
+    // Map should recalculate size if the window is resized
+    window.addEventListener('resize', () => {
+        mainMap.invalidateSize();
     });
 }
 

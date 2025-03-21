@@ -1,10 +1,12 @@
 /* ENAV Manager Styles */
 
 #map {
-    height: 400px;
+    height: 600px; /* Taller map to fill vertical space */
     width: 100%;
     border-radius: 4px;
     margin-bottom: 10px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    border: 1px solid #ddd;
 }
 
 body {
@@ -21,19 +23,17 @@ h1 {
 }
 
 .controls {
-    margin: 15px 0;
-    padding: 20px;
+    margin: 0 0 15px 0;
+    padding: 15px;
     border-radius: 8px;
     background-color: white;
     box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
 
 .controls h3 {
+    font-size: 1.1em;
     margin-top: 0;
-    margin-bottom: 15px;
-    color: #333;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 10px;
+    margin-bottom: 10px;
 }
 
 .controls label {
@@ -346,4 +346,47 @@ input[type="checkbox"] {
 .poi-status-disabled {
     background-color: #f44336;
     color: white;
+}
+
+/* New layout with controls on left and map on right */
+.page-container {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    gap: 20px;
+}
+
+.left-panel {
+    width: 25%;
+    flex-shrink: 0;
+}
+
+.right-panel {
+    width: 75%;
+    flex-grow: 1;
+}
+
+.map-container {
+    position: sticky;
+    top: 20px;
+}
+
+/* Better mobile adaptation */
+@media (max-width: 768px) {
+    .page-container {
+        flex-direction: column;
+    }
+    
+    .left-panel, .right-panel {
+        width: 100%;
+    }
+    
+    #map {
+        height: 400px;
+    }
+    
+    .map-container {
+        position: relative;
+        top: 0;
+    }
 }
