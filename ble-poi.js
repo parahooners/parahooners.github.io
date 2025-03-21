@@ -1,6 +1,6 @@
 /**
  * BLE communication module for ENAV
- * This file should handle all the BLE communication with the ESP32
+ * This file handles all BLE communication with the ESP32
  */
 
 let bleDevice;
@@ -10,39 +10,25 @@ let txCharacteristicUuid = "0000ffe1-0000-1000-8000-00805f9b34fb";
 let rxCharacteristicUuid = "0000ffe2-0000-1000-8000-00805f9b34fb";
 let txCharacteristic;
 let rxCharacteristic;
+let bleDataCallback = null;
+
+// Register a callback function to be called when data is received from BLE
+function registerBLEDataCallback(callback) {
+    bleDataCallback = callback;
+    console.log("BLE data callback registered");
+}
 
 let map, marker;
 let isFirstPOIUpdate = true; // Track if this is the first POI update
 
-// Initialize the map
-function initializeMap() {
-    map = L.map('map').setView([0, 0], 2); // Default view at [0, 0]
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
-
-    marker = L.marker([0, 0], { draggable: true }).addTo(map);
-    marker.bindPopup("Drag or click on the map to set POI").openPopup();
-
-    // Update text boxes when the marker is dragged
-    marker.on('dragend', () => {
-        const latLng = marker.getLatLng();
-        document.getElementById('poiLat').value = latLng.lat.toFixed(6);
-        document.getElementById('poiLon').value = latLng.lng.toFixed(6);
-    });
-
-    // Move the marker when the map is clicked
-    map.on('click', (event) => {
-        const { lat, lng } = event.latlng;
-        marker.setLatLng([lat, lng]);
-        document.getElementById('poiLat').value = lat.toFixed(6);
-        document.getElementById('poiLon').value = lng.toFixed(6);
-    });
-}
-
 // Update the connection status icon
 function updateConnectionStatus(connected) {
-    const connectionStatus = document.getElementById('connectionStatus');
+    const connectionStatus = document.getElementById('connectionIcon');
+    if (!connectionStatus) {
+        console.error('Connection status icon element not found in the DOM.');
+        return;
+    }
+
     if (connected) {
         connectionStatus.src = 'connected.png'; // Icon for connected state
         connectionStatus.alt = 'Connected';
@@ -52,43 +38,67 @@ function updateConnectionStatus(connected) {
     }
 }
 
-// Connect to the BLE device
+// Ensure BLE initialization and connection handling are robust
 async function connectToBLE() {
     try {
         console.log('Requesting BLE device...');
         bleDevice = await navigator.bluetooth.requestDevice({
-            filters: [{ name: 'ENAV_BLE' }],
+            filters: [{ namePrefix: 'ENAV' }], // Filter by device name prefix
             optionalServices: [bleServiceUuid]
         });
-        
+
         console.log('Connecting to GATT server...');
         bleServer = await bleDevice.gatt.connect();
-        
+
         console.log('Getting service...');
         const service = await bleServer.getPrimaryService(bleServiceUuid);
-        
+
         console.log('Getting characteristics...');
         txCharacteristic = await service.getCharacteristic(txCharacteristicUuid);
         rxCharacteristic = await service.getCharacteristic(rxCharacteristicUuid);
-        
+
         // Enable notifications for receiving data
         await rxCharacteristic.startNotifications();
         rxCharacteristic.addEventListener('characteristicvaluechanged', handleBleData);
-        
+
         console.log('Connected to BLE device!');
-        document.getElementById('connectionStatus').src = "connected.png";
-        
-        // Fetch initial data from the device
-        setTimeout(() => {
-            fetchDataFromDevice();
-        }, 1000); // Delay to ensure device is ready
-        
+
+        // Update connection status
+        updateConnectionStatus(true);
+        if (bleDataCallback) {
+            bleDataCallback({ connected: true });
+        }
+
+        // Fetch initial data
+        await sendCommandToESP32('GET_DATA');
+
+        // Monitor connection
+        bleDevice.addEventListener('gattserverdisconnected', handleDisconnection);
+
         return true;
     } catch (error) {
         console.error('BLE connection error:', error);
-        alert('Failed to connect to BLE device: ' + error);
+        alert('Failed to connect to BLE device: ' + error.message);
+        updateConnectionStatus(false);
         return false;
     }
+}
+
+// Ensure disconnection handling is robust
+function handleDisconnection() {
+    console.log('Device disconnected');
+
+    if (bleDataCallback) {
+        bleDataCallback({ connected: false });
+    }
+
+    // Clear variables
+    txCharacteristic = null;
+    rxCharacteristic = null;
+    bleServer = null;
+
+    // Restart advertising or allow reconnection
+    alert('BLE device disconnected. Please reconnect.');
 }
 
 // Send a command to the ESP32
@@ -97,7 +107,6 @@ async function sendCommandToESP32(command) {
         console.log('No txCharacteristic available. Attempting to connect...');
         const connected = await connectToBLE();
         if (!connected) {
-            console.error('Failed to connect to BLE device');
             return false;
         }
     }
@@ -120,56 +129,47 @@ async function sendCommandToESP32(command) {
 function handleBleData(event) {
     const decoder = new TextDecoder();
     const data = decoder.decode(event.target.value);
-    console.log('Received data:', data);
+    console.log('Received BLE data:', data);
     
     // Parse the data string
     try {
-        const parts = data.split('|');
+        const parsedData = {};
+        parsedData.connected = true; // Mark as connected since we received data
         
         // Extract home coordinates
-        const homeMatch = parts[0].match(/Home Lat: ([-\d.]+), Lon: ([-\d.]+)/);
+        const homeMatch = data.match(/Home Lat: ([-\d.]+), Lon: ([-\d.]+)/);
         if (homeMatch) {
-            const homeLat = homeMatch[1];
-            const homeLon = homeMatch[2];
-            
-            // Update the UI
-            document.getElementById('savedHomeLat').value = homeLat;
-            document.getElementById('savedHomeLon').value = homeLon;
+            parsedData.homeLat = homeMatch[1];
+            parsedData.homeLon = homeMatch[2];
+            document.getElementById('savedHomeLat').value = homeMatch[1];
+            document.getElementById('savedHomeLon').value = homeMatch[2];
+            console.log(`Extracted home coordinates: ${parsedData.homeLat}, ${parsedData.homeLon}`);
         }
-        
-        // Extract POI coordinates
-        const poiMatch = parts[1].match(/POI Lat: ([-\d.]+), Lon: ([-\d.]+), Enabled: (\d)/);
-        if (poiMatch) {
-            const poiLat = parseFloat(poiMatch[1]);
-            const poiLon = parseFloat(poiMatch[2]);
-            const poiEnabled = poiMatch[3] === '1';
-            
-            // Update the UI
-            document.getElementById('savedPoiLat').value = poiLat.toFixed(6);
-            document.getElementById('savedPoiLon').value = poiLon.toFixed(6);
-            document.getElementById('savedPoiEnabled').checked = poiEnabled;
-            
-            // Update map marker if this is the first POI update
-            if (isFirstPOIUpdate && map && marker && !isNaN(poiLat) && !isNaN(poiLon)) {
-                marker.setLatLng([poiLat, poiLon]);
-                map.setView([poiLat, poiLon], 13);
-                isFirstPOIUpdate = false;
+
+        // Extract fuel information
+        const fuelMatch = data.match(/Fuel: ([\d.]+), Burn Rate: ([\d.]+)/);
+        if (fuelMatch) {
+            document.getElementById('newFuelLevel').value = fuelMatch[1];
+            document.getElementById('newBurnRate').value = fuelMatch[2];
+            console.log(`Extracted fuel data: Level=${fuelMatch[1]}L, Rate=${fuelMatch[2]}L/h`);
+        }
+
+        // Extract POI information
+        for (let i = 1; i <= 3; i++) {
+            const poiRegex = new RegExp(`POI${i}: Lat=([\\-\\d\\.]+), Lon=([\\-\\d\\.]+), En=(\\d)`);
+            const poiMatch = data.match(poiRegex);
+            if (poiMatch) {
+                document.getElementById(`poi${i}Lat`).value = poiMatch[1];
+                document.getElementById(`poi${i}Lon`).value = poiMatch[2];
+                document.getElementById(`poi${i}Enabled`).checked = poiMatch[3] === '1';
+                console.log(`Extracted POI ${i}: Lat=${poiMatch[1]}, Lon=${poiMatch[2]}, Enabled=${poiMatch[3]}`);
             }
         }
-        
-        // Extract fuel information
-        const fuelMatch = parts[2].match(/Fuel: ([\d.]+), Burn Rate: ([\d.]+)/);
-        if (fuelMatch) {
-            const fuelLevel = parseFloat(fuelMatch[1]).toFixed(1);
-            const burnRate = parseFloat(fuelMatch[2]).toFixed(1);
-            
-            console.log(`Updating fuel UI: Level=${fuelLevel}, Rate=${burnRate}`);
-            
-            // Update the UI
-            document.getElementById('fuelLevel').value = fuelLevel;
-            document.getElementById('fuelBurnRate').value = burnRate;
+
+        // Call the callback with the parsed data
+        if (bleDataCallback) {
+            bleDataCallback(parsedData);
         }
-        
     } catch (error) {
         console.error('Error parsing BLE data:', error);
     }
@@ -178,24 +178,31 @@ function handleBleData(event) {
 // Fetch data from the device
 async function fetchDataFromDevice() {
     try {
-        // A generic GET_DATA command might not be implemented on the ESP32
-        // Instead, we'll just wait for the periodic updates
-        console.log('Requesting initial data from device...');
-        // Send a dummy command to trigger a response
+        console.log('Requesting data from device...');
         await sendCommandToESP32('GET_DATA');
+        return true;
     } catch (error) {
         console.error('Error fetching data from device:', error);
+        return false;
     }
 }
 
-// Initialize the map and set up event listeners - CLEAN UP DUPLICATE HANDLERS
+// Add a fallback for unsupported browsers
 document.addEventListener('DOMContentLoaded', () => {
-    initializeMap();
-    
+    if (!navigator.bluetooth) {
+        alert('Your browser does not support Web Bluetooth. Please use a compatible browser like Chrome.');
+        return;
+    }
+
     document.getElementById('connectButton').addEventListener('click', async () => {
-        await connectToBLE();
+        const connected = await connectToBLE();
+        if (connected) {
+            alert('Successfully connected to BLE device!');
+        } else {
+            alert('Failed to connect to BLE device. Please try again.');
+        }
     });
-    
+
     document.getElementById('updatePOIButton').addEventListener('click', async () => {
         const lat = parseFloat(document.getElementById('poiLat').value);
         const lon = parseFloat(document.getElementById('poiLon').value);
@@ -231,3 +238,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+// Make functions available globally
+window.connectToBLE = connectToBLE;
+window.sendCommandToESP32 = sendCommandToESP32;
+window.registerBLEDataCallback = registerBLEDataCallback;
